@@ -41,7 +41,10 @@ export default function Assistant() {
     setLoading(true);
 
     try {
-      const response = await assistantService.query(text.trim());
+      const history = messages
+        .filter(m => m.id !== 'init')
+        .map(m => ({ role: m.role, content: m.content }));
+      const response = await assistantService.query(text.trim(), history);
       const assistantMsg: ChatMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
