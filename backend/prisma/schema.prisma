@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+  DRIVER
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum StockStatus {
+  OK
+  LOW
+  CRITICAL
+  EXPIRED
+}
+
+enum OrderStatus {
+  PENDING
+  PACKED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  SCHEDULED
+  IN_TRANSIT
+  DELIVERED
+  DELAYED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         Role     @default(STAFF)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Supplier {
+  id               String         @id @default(cuid())
+  name             String
+  category         String
+  contact          String
+  email            String         @unique
+  phone            String
+  status           SupplierStatus @default(ACTIVE)
+  performanceScore Float          @default(0) @map("performance_score")
+  totalOrders      Int            @default(0) @map("total_orders")
+  onTimeDelivery   Int            @default(0) @map("on_time_delivery")
+  lastDelivery     String?        @map("last_delivery")
+  address          String
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  products Product[]
+  orders   Order[]
+
+  @@map("suppliers")
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  category    String
+  quantity    Float
+  unit        String
+  minStock    Float       @map("min_stock")
+  expiryDate  DateTime    @map("expiry_date")
+  costPerUnit Float       @map("cost_per_unit")
+  status      StockStatus @default(OK)
+  supplierId  String      @map("supplier_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@map("products")
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  orderNumber      String      @unique @map("order_number")
+  supplierId       String      @map("supplier_id")
+  status           OrderStatus @default(PENDING)
+  expectedDelivery DateTime    @map("expected_delivery")
+  total            Float       @default(0)
+  notes            String?
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  supplier Supplier    @relation(fields: [supplierId], references: [id])
+  items    OrderItem[]
+  delivery Delivery?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String @map("order_id")
+  productName String @map("product_name")
+  quantity    Float
+  unit        String
+  unitPrice   Float  @map("unit_price")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Driver {
+  id           String @id @default(cuid())
+  name         String
+  phone        String
+  vehicle      String
+  licensePlate String @unique @map("license_plate")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  deliveries Delivery[]
+
+  @@map("drivers")
+}
+
+model Delivery {
+  id                   String         @id @default(cuid())
+  orderId              String         @unique @map("order_id")
+  driverId             String         @map("driver_id")
+  status               DeliveryStatus @default(SCHEDULED)
+  originLat            Float          @map("origin_lat")
+  originLng            Float          @map("origin_lng")
+  originLabel          String         @map("origin_label")
+  destinationLat       Float          @map("destination_lat")
+  destinationLng       Float          @map("destination_lng")
+  destinationLabel     String         @map("destination_label")
+  currentLat           Float          @map("current_lat")
+  currentLng           Float          @map("current_lng")
+  eta                  String
+  distance             String
+  startedAt            String         @map("started_at")
+  customerName         String         @map("customer_name")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  order  Order  @relation(fields: [orderId], references: [id])
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@map("deliveries")
+}

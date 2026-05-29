@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Search, X, FileText, ChevronRight, Package } from 'lucide-react';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
-import { orders } from '../data/orders';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { useOrders, useUpdateOrderStatus } from '../hooks/useOrders';
 import type { Order, OrderStatus } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
 
@@ -29,14 +30,21 @@ export default function Orders() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
 
-  const filtered = orders.filter(o => {
-    const matchSearch = o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-      o.supplierName.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'all' || o.status === statusFilter;
-    return matchSearch && matchStatus;
+  const { data: orders = [], isLoading, error } = useOrders({
+    status: statusFilter !== 'all' ? statusFilter : undefined,
   });
 
+  const updateStatus = useUpdateOrderStatus();
+
+  const filtered = orders.filter(o =>
+    o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+    o.supplierName.toLowerCase().includes(search.toLowerCase()),
+  );
+
   const pipelineStepIndex = (status: OrderStatus) => PIPELINE.indexOf(status);
+
+  if (isLoading) return <LoadingSpinner message="Loading orders…" />;
+  if (error) return <div className="text-center py-24 text-red-500 text-sm">Failed to load orders.</div>;
 
   return (
     <div className="space-y-5">
@@ -92,7 +100,7 @@ export default function Orders() {
         </div>
       </Card>
 
-      {/* Orders list */}
+      {/* Orders table */}
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -110,9 +118,7 @@ export default function Orders() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">No orders found.</td>
-                </tr>
+                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No orders found.</td></tr>
               ) : (
                 filtered.map(o => (
                   <tr
@@ -120,18 +126,14 @@ export default function Orders() {
                     className="hover:bg-gray-50 transition-colors cursor-pointer"
                     onClick={() => { setSelectedOrder(o); setShowInvoice(false); }}
                   >
-                    <td className="px-5 py-3.5">
-                      <p className="font-semibold text-primary-600">{o.orderNumber}</p>
-                    </td>
+                    <td className="px-5 py-3.5"><p className="font-semibold text-primary-600">{o.orderNumber}</p></td>
                     <td className="px-4 py-3.5 font-medium text-gray-800">{o.supplierName}</td>
                     <td className="px-4 py-3.5 text-gray-500">{formatDate(o.createdAt)}</td>
                     <td className="px-4 py-3.5 text-gray-500">{formatDate(o.expectedDelivery)}</td>
                     <td className="px-4 py-3.5 text-right font-semibold text-gray-900">{formatCurrency(o.total)}</td>
-                    <td className="px-4 py-3.5 text-gray-500">{o.items.length} item{o.items.length > 1 ? 's' : ''}</td>
+                    <td className="px-4 py-3.5 text-gray-500">{o.items.length} item{o.items.length !== 1 ? 's' : ''}</td>
                     <td className="px-4 py-3.5"><StatusBadge status={o.status} /></td>
-                    <td className="px-4 py-3.5">
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
-                    </td>
+                    <td className="px-4 py-3.5"><ChevronRight className="w-4 h-4 text-gray-400" /></td>
                   </tr>
                 ))
               )}
@@ -165,7 +167,7 @@ export default function Orders() {
                       const current = selectedOrder.status === step;
                       return (
                         <div key={step} className="flex items-center flex-1">
-                          <div className={`flex flex-col items-center flex-1 ${i > 0 ? '' : ''}`}>
+                          <div className="flex flex-col items-center flex-1">
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${active ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
                               {i + 1}
                             </div>
@@ -182,25 +184,35 @@ export default function Orders() {
                   </div>
                 </div>
 
-                {/* Order Details */}
+                {/* Details */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-400">Supplier</p>
-                    <p className="font-medium text-gray-800">{selectedOrder.supplierName}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Created</p>
-                    <p className="font-medium text-gray-800">{formatDate(selectedOrder.createdAt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Expected Delivery</p>
-                    <p className="font-medium text-gray-800">{formatDate(selectedOrder.expectedDelivery)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Total</p>
-                    <p className="font-bold text-primary-600">{formatCurrency(selectedOrder.total)}</p>
-                  </div>
+                  <div><p className="text-xs text-gray-400">Supplier</p><p className="font-medium text-gray-800">{selectedOrder.supplierName}</p></div>
+                  <div><p className="text-xs text-gray-400">Created</p><p className="font-medium text-gray-800">{formatDate(selectedOrder.createdAt)}</p></div>
+                  <div><p className="text-xs text-gray-400">Expected Delivery</p><p className="font-medium text-gray-800">{formatDate(selectedOrder.expectedDelivery)}</p></div>
+                  <div><p className="text-xs text-gray-400">Total</p><p className="font-bold text-primary-600">{formatCurrency(selectedOrder.total)}</p></div>
                 </div>
+
+                {/* Status update buttons */}
+                {selectedOrder.status !== 'delivered' && selectedOrder.status !== 'cancelled' && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Update Status</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {PIPELINE.filter(s => pipelineStepIndex(s) > pipelineStepIndex(selectedOrder.status)).map(s => (
+                        <button
+                          key={s}
+                          onClick={async () => {
+                            await updateStatus.mutateAsync({ id: selectedOrder.id, status: s });
+                            setSelectedOrder(prev => prev ? { ...prev, status: s } : null);
+                          }}
+                          disabled={updateStatus.isPending}
+                          className="px-3 py-1.5 text-xs font-medium bg-primary-50 hover:bg-primary-100 text-primary-700 rounded-lg border border-primary-200 transition-colors disabled:opacity-50"
+                        >
+                          Mark as {PIPELINE_LABELS[s]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Items */}
                 <div>
@@ -237,12 +249,7 @@ export default function Orders() {
               </div>
             ) : (
               <div className="flex-1 p-6">
-                <button
-                  onClick={() => setShowInvoice(false)}
-                  className="text-sm text-primary-600 hover:underline mb-4 flex items-center gap-1"
-                >
-                  ← Back to order
-                </button>
+                <button onClick={() => setShowInvoice(false)} className="text-sm text-primary-600 hover:underline mb-4 flex items-center gap-1">← Back to order</button>
                 <div className="border border-gray-200 rounded-xl p-5 space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
@@ -254,22 +261,10 @@ export default function Orders() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-xs text-gray-400">Bill To</p>
-                      <p className="font-medium">FoodFlow Restaurant</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400">From</p>
-                      <p className="font-medium">{selectedOrder.supplierName}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400">Invoice Date</p>
-                      <p className="font-medium">{formatDate(selectedOrder.createdAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400">Due Date</p>
-                      <p className="font-medium">{formatDate(selectedOrder.expectedDelivery)}</p>
-                    </div>
+                    <div><p className="text-xs text-gray-400">Bill To</p><p className="font-medium">FoodFlow Restaurant</p></div>
+                    <div><p className="text-xs text-gray-400">From</p><p className="font-medium">{selectedOrder.supplierName}</p></div>
+                    <div><p className="text-xs text-gray-400">Invoice Date</p><p className="font-medium">{formatDate(selectedOrder.createdAt)}</p></div>
+                    <div><p className="text-xs text-gray-400">Due Date</p><p className="font-medium">{formatDate(selectedOrder.expectedDelivery)}</p></div>
                   </div>
                   <div className="border-t border-gray-100 pt-3">
                     <table className="w-full text-sm">

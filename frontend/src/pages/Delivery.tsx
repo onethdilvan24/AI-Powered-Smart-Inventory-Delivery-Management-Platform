@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { Truck, Clock, MapPin, Phone, Navigation, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Truck, Clock, MapPin, User, Phone, Navigation } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
-import { deliveries } from '../data/deliveries';
-import type { Delivery as DeliveryType } from '../types';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { useDeliveries } from '../hooks/useDeliveries';
+import type { Delivery } from '../types';
+import { formatDate } from '../lib/utils';
+import 'leaflet/dist/leaflet.css';
 
-// Fix default leaflet marker icons
+// Fix default Leaflet marker icon paths broken by Vite bundling
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -15,223 +17,198 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const truckIcon = (color: string) => L.divIcon({
+const truckIcon = new L.DivIcon({
   className: '',
-  html: `<div style="
-    background:${color};
-    width:32px;height:32px;border-radius:50% 50% 50% 0;
-    transform:rotate(-45deg);
-    border:2px solid white;
-    box-shadow:0 2px 6px rgba(0,0,0,0.3);
-    display:flex;align-items:center;justify-content:center;
-  ">
-    <span style="transform:rotate(45deg);font-size:14px;">🚚</span>
+  html: `<div class="flex items-center justify-center w-9 h-9 bg-primary-600 rounded-full border-2 border-white shadow-lg">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+  </div>`,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+const destIcon = new L.DivIcon({
+  className: '',
+  html: `<div class="flex items-center justify-center w-8 h-8 bg-red-500 rounded-full border-2 border-white shadow-lg">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3" fill="white"/></svg>
   </div>`,
   iconSize: [32, 32],
   iconAnchor: [16, 32],
 });
 
-const destIcon = L.divIcon({
-  className: '',
-  html: `<div style="
-    background:#059669;width:14px;height:14px;border-radius:50%;
-    border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);
-  "></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-const STATUS_COLORS: Record<string, string> = {
-  in_transit: '#8b5cf6',
-  delayed: '#ef4444',
-  scheduled: '#3b82f6',
-  delivered: '#059669',
-};
-
-function MapCenter({ pos }: { pos: [number, number] }) {
+function MapFlyTo({ delivery }: { delivery: Delivery }) {
   const map = useMap();
-  useEffect(() => { map.setView(pos, 13, { animate: true }); }, [pos, map]);
+  useEffect(() => {
+    map.flyTo([delivery.currentPosition.lat, delivery.currentPosition.lng], 12, { duration: 1 });
+  }, [delivery.id, map]);
   return null;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  in_transit: 'bg-blue-100 text-blue-700',
+  scheduled: 'bg-amber-100 text-amber-700',
+  delivered: 'bg-emerald-100 text-emerald-700',
+  delayed: 'bg-red-100 text-red-700',
+};
+
 export default function Delivery() {
-  const [selected, setSelected] = useState<DeliveryType>(deliveries[0]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const { data: deliveries = [], isLoading, error } = useDeliveries();
+
+  const selected = deliveries.find(d => d.id === selectedId) ?? deliveries[0] ?? null;
+
+  if (isLoading) return <LoadingSpinner message="Loading deliveries…" />;
+  if (error) return <div className="text-center py-24 text-red-500 text-sm">Failed to load deliveries.</div>;
+
+  const mapCenter: [number, number] = selected
+    ? [selected.currentPosition.lat, selected.currentPosition.lng]
+    : [6.9271, 79.8612]; // default: Colombo
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Delivery Tracking</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Live fleet overview — {deliveries.length} active routes</p>
+        <p className="text-sm text-gray-500 mt-0.5">{deliveries.length} active deliveries • refreshes every 30s</p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" style={{ height: 620 }}>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 h-[70vh]">
         {/* Delivery list */}
-        <div className="space-y-3 overflow-y-auto pr-1" style={{ maxHeight: 620 }}>
-          {deliveries.map(d => (
-            <button
-              key={d.id}
-              onClick={() => setSelected(d)}
-              className={`w-full text-left card p-4 transition-all ${selected.id === d.id ? 'ring-2 ring-primary-500' : 'hover:shadow-md'}`}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                    style={{ background: STATUS_COLORS[d.status] ?? '#6b7280' }}
-                  >
-                    <Truck className="w-4 h-4" />
+        <div className="xl:col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+            <Truck className="w-4 h-4 text-primary-600" />
+            <span className="font-semibold text-gray-900 text-sm">Active Deliveries</span>
+          </div>
+          <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+            {deliveries.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-10">No deliveries found.</p>
+            ) : (
+              deliveries.map(d => (
+                <button
+                  key={d.id}
+                  onClick={() => setSelectedId(d.id)}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${selected?.id === d.id ? 'bg-primary-50 border-l-2 border-primary-600' : ''}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${STATUS_COLORS[d.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                        <Truck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{d.orderNumber}</p>
+                        <p className="text-xs text-gray-500">{d.driver.name}</p>
+                      </div>
+                    </div>
+                    <StatusBadge status={d.status} />
                   </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">{d.orderNumber}</p>
-                    <p className="text-xs text-gray-500">{d.driver.name}</p>
+                  <div className="mt-2 flex items-center gap-3 text-xs text-gray-500 ml-10.5">
+                    <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.destination.label}</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />ETA: {d.eta}</span>
                   </div>
-                </div>
-                <StatusBadge status={d.status} />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <MapPin className="w-3 h-3 text-gray-400" />
-                  <span className="truncate">{d.destination.label}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <Clock className="w-3 h-3 text-gray-400" />
-                  <span>ETA: {d.eta}</span>
-                  <span className="text-gray-400">·</span>
-                  <span>{d.distance}</span>
-                </div>
-              </div>
-            </button>
-          ))}
+                </button>
+              ))
+            )}
+          </div>
         </div>
 
-        {/* Map + detail panel */}
+        {/* Map + details */}
         <div className="xl:col-span-2 flex flex-col gap-4">
           {/* Map */}
-          <div className="flex-1 rounded-xl overflow-hidden border border-gray-100 shadow-sm" style={{ minHeight: 380 }}>
+          <div className="flex-1 rounded-2xl overflow-hidden border border-gray-100 shadow-sm relative">
             <MapContainer
-              center={[selected.currentPosition.lat, selected.currentPosition.lng]}
-              zoom={13}
-              style={{ height: '100%', width: '100%' }}
-              scrollWheelZoom={false}
+              center={mapCenter}
+              zoom={12}
+              className="w-full h-full"
+              style={{ minHeight: 300 }}
             >
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
               />
-              <MapCenter pos={[selected.currentPosition.lat, selected.currentPosition.lng]} />
               {deliveries.map(d => (
                 <Marker
                   key={d.id}
                   position={[d.currentPosition.lat, d.currentPosition.lng]}
-                  icon={truckIcon(STATUS_COLORS[d.status] ?? '#6b7280')}
-                  eventHandlers={{ click: () => setSelected(d) }}
+                  icon={truckIcon}
                 >
                   <Popup>
                     <div className="text-sm">
-                      <p className="font-semibold">{d.orderNumber}</p>
-                      <p className="text-gray-500">{d.driver.name}</p>
-                      <p className="text-gray-500">ETA: {d.eta}</p>
+                      <p className="font-bold">{d.orderNumber}</p>
+                      <p className="text-gray-600">Driver: {d.driver.name}</p>
+                      <p className="text-gray-600">ETA: {d.eta}</p>
                     </div>
                   </Popup>
                 </Marker>
               ))}
-              {/* Destination marker */}
-              <Marker
-                position={[selected.destination.lat, selected.destination.lng]}
-                icon={destIcon}
-              >
-                <Popup>
-                  <div className="text-sm">
-                    <p className="font-semibold">{selected.destination.label}</p>
-                    <p className="text-gray-500">{selected.customerName}</p>
-                  </div>
-                </Popup>
-              </Marker>
-              {/* Route line */}
-              <Polyline
-                positions={[
-                  [selected.origin.lat, selected.origin.lng],
-                  [selected.currentPosition.lat, selected.currentPosition.lng],
-                  [selected.destination.lat, selected.destination.lng],
-                ]}
-                pathOptions={{ color: STATUS_COLORS[selected.status] ?? '#6b7280', weight: 3, dashArray: '6 4', opacity: 0.8 }}
-              />
+              {selected && (
+                <>
+                  <Marker
+                    position={[selected.destination.lat, selected.destination.lng]}
+                    icon={destIcon}
+                  >
+                    <Popup>{selected.destination.label}</Popup>
+                  </Marker>
+                  <Polyline
+                    positions={[
+                      [selected.currentPosition.lat, selected.currentPosition.lng],
+                      [selected.destination.lat, selected.destination.lng],
+                    ]}
+                    color="#059669"
+                    weight={3}
+                    dashArray="8,8"
+                  />
+                  <MapFlyTo delivery={selected} />
+                </>
+              )}
             </MapContainer>
           </div>
 
-          {/* Driver + delivery details */}
-          <div className="card p-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Driver Details</p>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center font-bold text-primary-700">
-                  {selected.driver.name.split(' ').map(n => n[0]).join('')}
-                </div>
+          {/* Selected delivery details */}
+          {selected && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="font-semibold text-gray-900">{selected.driver.name}</p>
-                  <p className="text-xs text-gray-500">{selected.driver.vehicle}</p>
+                  <p className="text-xs text-gray-400 mb-0.5">Selected Delivery</p>
+                  <p className="font-bold text-gray-900">{selected.orderNumber}</p>
+                  <p className="text-sm text-gray-500">{selected.customerName}</p>
                 </div>
+                <StatusBadge status={selected.status} />
               </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Phone className="w-3.5 h-3.5 text-gray-400" />
-                  <span>{selected.driver.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Truck className="w-3.5 h-3.5 text-gray-400" />
-                  <span>{selected.driver.licensePlate}</span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Delivery Info</p>
-              <div className="space-y-2.5 text-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="flex items-start gap-2">
-                  <Navigation className="w-3.5 h-3.5 text-gray-400 mt-0.5" />
+                  <User className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-xs text-gray-400">Origin</p>
-                    <p className="text-gray-800">{selected.origin.label}</p>
+                    <p className="text-gray-400">Driver</p>
+                    <p className="font-medium text-gray-800">{selected.driver.name}</p>
+                    <p className="text-gray-500">{selected.driver.vehicle}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-primary-500 mt-0.5" />
+                  <Phone className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-xs text-gray-400">Destination</p>
-                    <p className="text-gray-800">{selected.destination.label}</p>
+                    <p className="text-gray-400">Contact</p>
+                    <p className="font-medium text-gray-800">{selected.driver.phone}</p>
+                    <p className="text-gray-500">{selected.driver.licensePlate}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-start gap-2">
+                  <Navigation className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-xs text-gray-400">ETA</p>
-                    <p className="font-semibold text-gray-900 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-primary-500" /> {selected.eta}
-                    </p>
+                    <p className="text-gray-400">Destination</p>
+                    <p className="font-medium text-gray-800">{selected.destination.label}</p>
+                    <p className="text-gray-500">{selected.distance}</p>
                   </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-xs text-gray-400">Distance</p>
-                    <p className="font-semibold text-gray-900">{selected.distance}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-400">Status</p>
-                    <div className="mt-0.5">
-                      {selected.status === 'delayed' ? (
-                        <span className="flex items-center gap-1 text-red-500 text-xs font-medium">
-                          <AlertTriangle className="w-3.5 h-3.5" /> Delayed
-                        </span>
-                      ) : selected.status === 'delivered' ? (
-                        <span className="flex items-center gap-1 text-emerald-600 text-xs font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Delivered
-                        </span>
-                      ) : (
-                        <StatusBadge status={selected.status} />
-                      )}
-                    </div>
+                    <p className="text-gray-400">ETA</p>
+                    <p className="font-medium text-gray-800">{selected.eta}</p>
+                    <p className="text-gray-500">Started: {formatDate(selected.startedAt)}</p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

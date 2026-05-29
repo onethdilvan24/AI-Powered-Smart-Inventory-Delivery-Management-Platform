@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Search, Plus, X, AlertTriangle, Clock, Filter } from 'lucide-react';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
-import { products as initialProducts } from '../data/products';
-import type { Product, StockStatus } from '../types';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { useProducts, useCreateProduct } from '../hooks/useProducts';
+import { useSuppliers } from '../hooks/useSuppliers';
+import type { StockStatus } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
 
-const categories = ['All', ...Array.from(new Set(initialProducts.map(p => p.category)))];
 const statusOptions: { label: string; value: StockStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
   { label: 'In Stock', value: 'ok' },
@@ -17,46 +18,49 @@ const statusOptions: { label: string; value: StockStatus | 'all' }[] = [
 
 const emptyForm = {
   name: '', category: '', quantity: '', unit: 'kg',
-  minStock: '', expiryDate: '', costPerUnit: '', supplier: '',
+  minStock: '', expiryDate: '', costPerUnit: '', supplierId: '',
 };
 
 export default function Inventory() {
-  const [products, setProducts] = useState(initialProducts);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const filtered = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.supplier.toLowerCase().includes(search.toLowerCase());
-    const matchCat = categoryFilter === 'All' || p.category === categoryFilter;
-    const matchStatus = statusFilter === 'all' || p.status === statusFilter;
-    return matchSearch && matchCat && matchStatus;
+  const { data: products = [], isLoading, error } = useProducts({
+    search: search || undefined,
+    category: categoryFilter !== 'All' ? categoryFilter : undefined,
+    status: statusFilter !== 'all' ? statusFilter : undefined,
   });
 
-  function handleAddProduct() {
-    if (!form.name || !form.category || !form.quantity) return;
-    const qty = Number(form.quantity);
-    const min = Number(form.minStock);
-    const status: StockStatus = qty === 0 ? 'critical' : qty <= min * 0.5 ? 'critical' : qty <= min ? 'low' : 'ok';
-    const newProduct: Product = {
-      id: `p${Date.now()}`,
-      name: form.name,
-      category: form.category,
-      quantity: qty,
-      unit: form.unit,
-      minStock: min,
-      expiryDate: form.expiryDate,
-      costPerUnit: Number(form.costPerUnit),
-      supplier: form.supplier,
-      status,
-    };
-    setProducts(prev => [newProduct, ...prev]);
-    setForm(emptyForm);
-    setShowModal(false);
+  const { data: suppliers = [] } = useSuppliers({ status: 'active' });
+  const createProduct = useCreateProduct();
+
+  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
+
+  async function handleAddProduct() {
+    if (!form.name || !form.category || !form.quantity || !form.supplierId) return;
+    try {
+      await createProduct.mutateAsync({
+        name: form.name,
+        category: form.category,
+        quantity: Number(form.quantity),
+        unit: form.unit,
+        minStock: Number(form.minStock),
+        expiryDate: new Date(form.expiryDate).toISOString(),
+        costPerUnit: Number(form.costPerUnit),
+        supplierId: form.supplierId,
+      });
+      setForm(emptyForm);
+      setShowModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create product');
+    }
   }
+
+  if (isLoading) return <LoadingSpinner message="Loading inventory…" />;
+  if (error) return <div className="text-center py-24 text-red-500 text-sm">Failed to load inventory.</div>;
 
   return (
     <div className="space-y-5">
@@ -142,16 +146,12 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-400">No products found.</td>
-                </tr>
+              {products.length === 0 ? (
+                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No products found.</td></tr>
               ) : (
-                filtered.map(p => (
+                products.map(p => (
                   <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <p className="font-medium text-gray-900">{p.name}</p>
-                    </td>
+                    <td className="px-5 py-3.5"><p className="font-medium text-gray-900">{p.name}</p></td>
                     <td className="px-4 py-3.5 text-gray-600">{p.category}</td>
                     <td className="px-4 py-3.5 text-right">
                       <span className={`font-semibold ${p.quantity <= p.minStock * 0.5 ? 'text-red-600' : p.quantity <= p.minStock ? 'text-amber-600' : 'text-gray-900'}`}>
@@ -189,9 +189,8 @@ export default function Inventory() {
               {[
                 { label: 'Product Name', key: 'name', type: 'text', span: true },
                 { label: 'Category', key: 'category', type: 'text' },
-                { label: 'Supplier', key: 'supplier', type: 'text' },
-                { label: 'Quantity', key: 'quantity', type: 'number' },
                 { label: 'Unit (kg/L/pcs)', key: 'unit', type: 'text' },
+                { label: 'Quantity', key: 'quantity', type: 'number' },
                 { label: 'Min Stock', key: 'minStock', type: 'number' },
                 { label: 'Cost Per Unit ($)', key: 'costPerUnit', type: 'number' },
                 { label: 'Expiry Date', key: 'expiryDate', type: 'date' },
@@ -206,19 +205,29 @@ export default function Inventory() {
                   />
                 </div>
               ))}
+              {/* Supplier select */}
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Supplier</label>
+                <select
+                  value={form.supplierId}
+                  onChange={e => setForm(prev => ({ ...prev, supplierId: e.target.value }))}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select supplier…</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="px-6 pb-6 flex justify-end gap-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
+              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
               <button
                 onClick={handleAddProduct}
-                className="px-4 py-2 text-sm bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium"
+                disabled={createProduct.isPending}
+                className="px-4 py-2 text-sm bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg font-medium"
               >
-                Add Product
+                {createProduct.isPending ? 'Saving…' : 'Add Product'}
               </button>
             </div>
           </div>
