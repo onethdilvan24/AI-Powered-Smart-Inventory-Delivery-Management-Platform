@@ -46,7 +46,7 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
 
 export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   const order = await prisma.order.findUnique({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     include: {
       supplier: true,
       items: true,
@@ -81,17 +81,17 @@ export const createOrder = asyncHandler(async (req: Request, res: Response) => {
 export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
   const body = orderSchema.partial().parse(req.body);
 
-  const existing = await prisma.order.findUnique({ where: { id: req.params.id }, include: { items: true } });
+  const existing = await prisma.order.findUnique({ where: { id: String(req.params.id) }, include: { items: true } });
   if (!existing) { res.status(404).json({ error: 'Order not found' }); return; }
 
   let total = existing.total;
   if (body.items) {
     total = body.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    await prisma.orderItem.deleteMany({ where: { orderId: req.params.id } });
+    await prisma.orderItem.deleteMany({ where: { orderId: String(req.params.id) } });
   }
 
   const order = await prisma.order.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: {
       ...(body.supplierId ? { supplierId: body.supplierId } : {}),
       ...(body.expectedDelivery ? { expectedDelivery: new Date(body.expectedDelivery) } : {}),
@@ -107,7 +107,7 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
 export const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {
   const { status } = statusSchema.parse(req.body);
   const order = await prisma.order.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: { status },
     include: { supplier: { select: { id: true, name: true } }, items: true },
   });
@@ -115,6 +115,6 @@ export const updateOrderStatus = asyncHandler(async (req: Request, res: Response
 });
 
 export const deleteOrder = asyncHandler(async (req: Request, res: Response) => {
-  await prisma.order.delete({ where: { id: req.params.id } });
+  await prisma.order.delete({ where: { id: String(req.params.id) } });
   res.status(204).send();
 });

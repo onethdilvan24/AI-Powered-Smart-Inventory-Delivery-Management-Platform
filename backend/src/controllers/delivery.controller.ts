@@ -53,7 +53,7 @@ export const listDeliveries = asyncHandler(async (req: Request, res: Response) =
 
 export const getDelivery = asyncHandler(async (req: Request, res: Response) => {
   const delivery = await prisma.delivery.findUnique({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     include: { driver: true, order: { include: { supplier: true, items: true } } },
   });
   if (!delivery) { res.status(404).json({ error: 'Delivery not found' }); return; }
@@ -88,7 +88,7 @@ export const createDelivery = asyncHandler(async (req: Request, res: Response) =
 export const updateDelivery = asyncHandler(async (req: Request, res: Response) => {
   const body = deliverySchema.partial().parse(req.body);
   const delivery = await prisma.delivery.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: {
       ...(body.driverId ? { driverId: body.driverId } : {}),
       ...(body.status ? { status: body.status } : {}),
@@ -108,7 +108,7 @@ export const updateDelivery = asyncHandler(async (req: Request, res: Response) =
 export const updatePosition = asyncHandler(async (req: Request, res: Response) => {
   const { lat, lng, eta } = positionSchema.parse(req.body);
   const delivery = await prisma.delivery.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: { currentLat: lat, currentLng: lng, ...(eta ? { eta } : {}) },
   });
   res.json({ data: delivery });
@@ -117,7 +117,7 @@ export const updatePosition = asyncHandler(async (req: Request, res: Response) =
 export const updateDeliveryStatus = asyncHandler(async (req: Request, res: Response) => {
   const { status } = statusSchema.parse(req.body);
   const delivery = await prisma.delivery.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: { status },
     include: { driver: true },
   });
@@ -125,6 +125,6 @@ export const updateDeliveryStatus = asyncHandler(async (req: Request, res: Respo
 });
 
 export const deleteDelivery = asyncHandler(async (req: Request, res: Response) => {
-  await prisma.delivery.delete({ where: { id: req.params.id } });
+  await prisma.delivery.delete({ where: { id: String(req.params.id) } });
   res.status(204).send();
 });

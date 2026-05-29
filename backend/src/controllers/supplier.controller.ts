@@ -35,7 +35,7 @@ export const listSuppliers = asyncHandler(async (req: Request, res: Response) =>
 
 export const getSupplier = asyncHandler(async (req: Request, res: Response) => {
   const supplier = await prisma.supplier.findUnique({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     include: {
       products: true,
       orders: { orderBy: { createdAt: 'desc' }, take: 5 },
@@ -54,13 +54,13 @@ export const createSupplier = asyncHandler(async (req: Request, res: Response) =
 export const updateSupplier = asyncHandler(async (req: Request, res: Response) => {
   const body = supplierSchema.partial().parse(req.body);
   const supplier = await prisma.supplier.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: body,
   });
   res.json({ data: supplier });
 });
 
 export const deleteSupplier = asyncHandler(async (req: Request, res: Response) => {
-  await prisma.supplier.delete({ where: { id: req.params.id } });
+  await prisma.supplier.delete({ where: { id: String(req.params.id) } });
   res.status(204).send();
 });

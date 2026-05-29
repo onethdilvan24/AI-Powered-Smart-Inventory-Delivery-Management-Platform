@@ -76,7 +76,7 @@ export async function processQuery(message: string): Promise<string> {
       prisma.delivery.count({ where: { status: DeliveryStatus.DELAYED } }),
     ]);
     const totalValue = products.reduce((s, p) => s + p.quantity * p.costPerUnit, 0);
-    const lowStock = products.filter(p => [StockStatus.LOW, StockStatus.CRITICAL].includes(p.status)).length;
+    const lowStock = products.filter(p => ([StockStatus.LOW, StockStatus.CRITICAL] as StockStatus[]).includes(p.status)).length;
     return `Here's your **current summary**:\n\n📦 **Inventory**\n• Total products: ${products.length}\n• Inventory value: ${fmt(totalValue)}\n• Low/critical stock: ${lowStock} items\n\n🛒 **Orders**\n• Pending: ${pending}\n\n🚚 **Deliveries**\n• In transit: ${inTransit}\n• Delayed: ${delayed}`;
   }
 

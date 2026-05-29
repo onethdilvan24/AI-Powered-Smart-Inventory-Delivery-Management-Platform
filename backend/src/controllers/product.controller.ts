@@ -43,7 +43,7 @@ export const getLowStock = asyncHandler(async (_req: Request, res: Response) => 
 
 export const getProduct = asyncHandler(async (req: Request, res: Response) => {
   const product = await prisma.product.findUnique({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     include: { supplier: true },
   });
   if (!product) { res.status(404).json({ error: 'Product not found' }); return; }
@@ -63,7 +63,7 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
 
 export const updateProduct = asyncHandler(async (req: Request, res: Response) => {
   const body = updateSchema.parse(req.body);
-  const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.product.findUnique({ where: { id: String(req.params.id) } });
   if (!existing) { res.status(404).json({ error: 'Product not found' }); return; }
 
   const quantity = body.quantity ?? existing.quantity;
@@ -72,7 +72,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
   const status = computeStockStatus(quantity, minStock, expiryDate);
 
   const product = await prisma.product.update({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     data: { ...body, expiryDate, status },
     include: { supplier: { select: { id: true, name: true } } },
   });
@@ -80,6 +80,6 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
-  await prisma.product.delete({ where: { id: req.params.id } });
+  await prisma.product.delete({ where: { id: String(req.params.id) } });
   res.status(204).send();
 });
